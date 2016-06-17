@@ -63,6 +63,14 @@ def get_dists_to_ignore(installed):
     return list(flat_map(lambda req: dependency_tree(installed_keys, req), PACKAGES_TO_IGNORE))
 
 
+def get_package_key(requirement):
+    # NOTE: This makes sure that on older pip versions in certain cases there is
+    # always a valid requirement key
+    if requirement.req is None:
+        return requirement.link.url
+    return requirement.req.key
+
+
 def merge(requirements, ignore_conflicts):
     by_key = {}
 
@@ -72,7 +80,7 @@ def merge(requirements, ignore_conflicts):
                    'Perhaps add -e option?')
             raise UnsupportedConstraint(msg, ireq)
 
-        key = ireq.link or ireq.req.key
+        key = get_package_key(ireq)
 
         if not ignore_conflicts:
             existing_ireq = by_key.get(key)
@@ -93,7 +101,7 @@ def diff(compiled_requirements, installed_dists):
     Calculate which packages should be installed or uninstalled, given a set
     of compiled requirements and a list of currently installed modules.
     """
-    requirements_lut = {r.link or r.req.key: r for r in compiled_requirements}
+    requirements_lut = {get_package_key(r): r for r in compiled_requirements}
 
     satisfied = set()  # holds keys
     to_install = set()  # holds keys-and-versions
@@ -108,7 +116,9 @@ def diff(compiled_requirements, installed_dists):
             satisfied.add(key)
 
     for key, requirement in requirements_lut.items():
-        if key not in satisfied:
+        if requirement.editable:
+            to_install.add('--editable=' + str(requirement.link or requirement.req))
+        elif key not in satisfied:
             to_install.add(str(requirement.link or requirement.req))
 
     # Make sure to not uninstall any packages that should be ignored
